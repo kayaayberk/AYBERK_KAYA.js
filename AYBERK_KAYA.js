@@ -1,3 +1,11 @@
+/**
+ *   EBEBEK PRODUCT CAROUSEL
+ *   -----------------------
+ * - Injects after hero section: body > eb-root > cx-storefront > main > cx-page-layout > cx-page-slot.Section1.has-components
+ * - Themes: STYLE_VARIANT = "website" | "screenshot"
+ *   NOTE: Current carousel styles are different than what's displayed in the hiring case PDF. That's why we have two themes.
+ * - Persists between page navigations -- looks for hero section and injects after it -- Safely handles race conditions
+ */
 (() => {
   const JQ_URL = "https://code.jquery.com/jquery-3.7.1.min.js";
   function withjQuery(cb) {
@@ -14,22 +22,22 @@
     const ANCHOR_SELECTOR = "body > eb-root > cx-storefront > main > cx-page-layout > cx-page-slot.Section1.has-components";
     const API_URL = "https://gist.githubusercontent.com/sevindi/8bcbde9f02c1d4abe112809c974e1f49/raw/9bf93b58df623a9b16f1db721cd0a7a539296cf0/products.json";
 
-    const ROOT_CLASS = "ebk-carousel";
-    const PRODUCTS_KEY = "ebk:products";
-    const FAVORITES_KEY = "ebk:favorites";
+    const ROOT_CLASS = "ebk-carousel";          // Root DOM class used for mount/unmount
+    const PRODUCTS_KEY = "ebk:products";        // Local cache key (products)
+    const FAVORITES_KEY = "ebk:favorites";      // Local cache key (ids[])
     const TITLE_TEXT = "Beğenebileceğinizi düşündüklerimiz";
-    const STYLE_VARIANT = "website";
+    const STYLE_VARIANT = "website";            // "website" (current website carousel styles) | "screenshot" (the one on the hiring case PDF)
 
     // Drag/snap feel
-    const DRAG_THRESHOLD_PX = 3;
-    const ALIGN_EPSILON_PX = 1.5;
+    const DRAG_THRESHOLD_PX = 3;                // >3px = drag, <3px = click
+    const ALIGN_EPSILON_PX = 1.5;               // consider aligned if remainder < 1.5px
 
-    // Lifecycle tokens
-    let navToken = 0;
-    let pendingObserver = null;
-    let pendingFetchController = null;
-    let didLogWrongPage = false;
-    let locationWatcherInstalled = false;
+    // SPA guards / lifecycle tokens
+    let navToken = 0;                           // Increments to invalidate stale work
+    let pendingObserver = null;                 // Anchor observer (MutationObserver)
+    let pendingFetchController = null;          // AbortController for fetch
+    let didLogWrongPage = false;                // Avoid spamming console
+    let locationWatcherInstalled = false;       // Setup once
 
     /*
      * UTILITIES (pure helpers)
@@ -494,104 +502,104 @@
      * STYLES - "website" (current website carousel styles) | "screenshot" (the one on the hiring case PDF)
      */
     function injectStyles(variant) {
-      $("style[data-ebk-carousel]").remove();
-
-      const cssCommon = `
-        .ebk-carousel{width:100vw;margin-left:calc(-50vw + 50%);margin-right:calc(-50vw + 50%);position:relative;background:transparent;--wrap-max:100vw;}
-        .ebk-carousel .ebk-wrap{margin:24px auto;padding:0 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-        .ebk-carousel .ebk-link{display:block;text-decoration:none;color:inherit;}
-        @media (min-width:576px){.ebk-carousel .ebk-wrap{max-width:540px}.ebk-carousel{--wrap-max:540px}}
-        @media (min-width:768px){.ebk-carousel .ebk-wrap{max-width:720px}.ebk-carousel{--wrap-max:720px}}
-        @media (min-width:992px){.ebk-carousel .ebk-wrap{max-width:960px}.ebk-carousel{--wrap-max:960px}}
-        @media (min-width:1280px){.ebk-carousel .ebk-wrap{max-width:1180px}.ebk-carousel{--wrap-max:1180px}}
-        @media (min-width:1480px){.ebk-carousel .ebk-wrap{max-width:1296px}.ebk-carousel{--wrap-max:1296px}}
-        @media (min-width:1580px){.ebk-carousel .ebk-wrap{max-width:1320px}.ebk-carousel{--wrap-max:1320px}}
-        .ebk-carousel .ebk-viewport{position:relative;overflow:visible;}
-        .ebk-carousel .ebk-stage{position:relative;}
-        .ebk-carousel .ebk-track{display:flex;gap:16px;overflow:hidden;cursor:grab;touch-action:pan-y;align-items:stretch;}
-        .ebk-carousel.is-dragging .ebk-track{cursor:grabbing;}
-        .ebk-carousel .ebk-item{flex:0 0 calc((100% - (16px * 4)) / 5);min-width:calc((100% - (16px * 4)) / 5);display:flex;}
-        @media (max-width:1399px){.ebk-carousel .ebk-item{flex-basis:calc((100% - (16px * 3))/4);min-width:calc((100% - (16px * 3))/4)}}
-        @media (max-width:1279px){.ebk-carousel .ebk-item{flex-basis:calc((100% - (16px * 2))/3);min-width:calc((100% - (16px * 2))/3)}}
-        @media (max-width:989px){.ebk-carousel .ebk-item{flex-basis:calc((100% - 16px)/2);min-width:calc((100% - 16px)/2)}}
-        .ebk-carousel .ebk-card{position:relative;background:#fff;border-radius:14px;overflow:hidden;width:100%;display:flex;flex-direction:column;border:1px solid #e9eef4;}
-        .ebk-carousel .ebk-card:hover{border-color:#d7dee7;}
-        .ebk-carousel .ebk-media{width:100%;aspect-ratio:4/3;background:#fff;}
-        .ebk-carousel .ebk-img{width:100%;height:100%;object-fit:contain;object-position:center;display:block;pointer-events:none;}
-        .ebk-carousel .ebk-card,*{user-select:none;-webkit-user-drag:none;}
-        .ebk-carousel .ebk-info{padding:12px 14px 14px;display:flex;flex-direction:column;height:100%;justify-content:space-between;gap:8px;}
-        .ebk-carousel .ebk-title{margin:0;font-size:13px;line-height:1.35;color:#2b2f36;}
-        .ebk-carousel .ebk-title b{font-weight:700;}
-        .ebk-carousel .ebk-title span{font-weight:400;}
-        .ebk-carousel .ebk-rating{display:inline-flex;align-items:center;gap:6px;}
-        .ebk-carousel .ebk-stars{display:inline-flex;gap:2px;}
-        .ebk-carousel .ebk-rating svg{width:12px;height:12px;}
-        .ebk-carousel .ebk-rcount{font-size:12px;color:#96a0aa;}
-        .ebk-carousel .ebk-priceRow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
-        .ebk-carousel .ebk-price .ebk-price-dec{font-size:14px;}
-        .ebk-carousel .ebk-fav{position:absolute;top:10px;right:10px;z-index:2;width:22px;height:22px;background:transparent;border:none;padding:0;cursor:pointer;color:#ff8c26;}
-        .ebk-carousel .ebk-fav .lucide-heart-icon{width:16px;height:16px;}
-        .ebk-carousel .ebk-fav[aria-pressed="true"] .lucide-heart-icon path{fill:currentColor;}
-        .ebk-carousel .ebk-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;background:#fff;border:none;color:#212121;display:grid;place-items:center;cursor:pointer;z-index:3;box-shadow:0 4px 10px rgba(0,0,0,.1)}
-        .ebk-carousel .ebk-prev{left:calc(50% - (min(var(--wrap-max),100vw)/2) - 52px)}
-        .ebk-carousel .ebk-next{right:calc(50% - (min(var(--wrap-max),100vw)/2) - 52px)}
-        .ebk-carousel .ebk-nav svg{width:20px;height:20px;}
-        @media (max-width:575px){.ebk-carousel .ebk-nav{display:none}}
-     `;
-
-      // Theme: current ebebek carousel styles
-      const cssWebsite = `
-        .ebk-carousel .ebk-box{background:#fff;border-radius:16px;border:none;}
-        .ebk-carousel .ebk-head{padding:12px 0;border:none;}
-        .ebk-carousel .ebk-head .ebk-title{font-size:24px;}
-        .ebk-carousel .ebk-priceRow--stack{display:flex;flex-direction:column;gap:0;}
-        .ebk-carousel .ebk-priceTop{display:flex;align-items:baseline;gap:12px;}
-        .ebk-carousel .ebk-original{font-size:12px;color:#a6afba;font-weight:600;text-decoration:line-through;}
-        .ebk-carousel .ebk-discount-pill{display:inline-flex;align-items:center;padding:0 6px;background:#00a365;color:#fff;border-radius:999px;font-weight:600;font-size:12px;}
-        .ebk-carousel .ebk-priceBottom .ebk-price{font-weight:600;font-size:18px;color:#00a365;line-height:14px;}
-        .ebk-carousel .ebk-price--normal{font-weight:600;font-size:18px;color:#2b2f36;}
-        .ebk-carousel .ebk-cta{position:absolute;right:12px;bottom:12px;width:44px;height:44px;border-radius:50%;border:none;background:#fff;color:#2f80ed;display:grid;place-items:center;box-shadow:0 4px 10px rgba(0,0,0,.1)}
-        .ebk-carousel .ebk-cta.ebk-cta-circle:hover{background:#0091D5;color:#fff;}
-      `;
-
-      // Theme: the one on the hiring case PDF
-      const cssScreenshot = `
-        .ebk-carousel .ebk-viewport{position:relative;overflow:visible;padding:16px;}
-        .ebk-carousel .ebk-box{background:#fff;border-radius:18px;border:1px solid #eef2f6;overflow:hidden;}
-        .ebk-carousel .ebk-head{background:#fff4e8;border-bottom:1px solid #ffe9d3;padding:14px 18px;}
-        .ebk-carousel .ebk-head .ebk-title{margin:0;font-size:20px;font-weight:700;color:#ff8c26;}
-        .ebk-carousel .ebk-badges{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:2;}
-        .ebk-carousel .ebk-badge{background:#eafff5;color:#10a779;font-size:11px;font-weight:800;padding:4px 6px;border-radius:8px;border:1px solid #c9f3e4;}
-        .ebk-carousel .ebk-rating svg{width:12px;height:12px;}
-        .ebk-carousel .ebk-priceRow--stack{display:flex;flex-direction:column;gap:0;}
-        .ebk-carousel .ebk-priceTop{display:flex;align-items:center;gap:8px;}
-        .ebk-carousel .ebk-original{font-size:12px;color:#9aa0a6;text-decoration:line-through;font-weight:600;}
-        .ebk-carousel .ebk-discount-pill{display:inline-flex;align-items:center;padding:0 8px;background:#e8f8f0;color:#13a76b;border-radius:999px;font-weight:800;font-size:12px;}
-        .ebk-carousel .ebk-priceBottom .ebk-price{font-weight:600;font-size:24px;color:#13a76b;}
-        .ebk-carousel .ebk-price--normal{font-weight:600;font-size:24px;color:#656565;}
-        /* Full-width cream footer button like the first image (spacing + 50px radius) */
-        .ebk-carousel .ebk-cta{
-            display: block;
-            width: calc(100% - 24px);
-            margin: 10px 12px 14px;
-            padding: 12px 18px;
-            background: #fff4e8;
-            color: #ff8c26;
-            border: 1px solid #ffe9d3;
-            border-radius: 50px;
-            font-weight: 700;
-            font-size: 14px;
-            cursor: pointer;
-            box-shadow: none;
-            text-align: center;
-        }
-        .ebk-carousel .ebk-cta:hover{background:#ffedd9;}
-        .ebk-carousel .ebk-nav{display:grid !important;}
-      `;
-
-      const css = cssCommon + (variant === "website" ? cssWebsite : cssScreenshot);
-      $("<style>").attr("data-ebk-carousel", "true").attr("data-variant", variant).text(css).appendTo(document.head);
-    }
+        $("style[data-ebk-carousel]").remove();
+  
+        const cssCommon = `
+          .ebk-carousel{width:100vw;margin-left:calc(-50vw + 50%);margin-right:calc(-50vw + 50%);position:relative;background:transparent;--wrap-max:100vw;}
+          .ebk-carousel .ebk-wrap{margin:24px auto;padding:0 16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+          .ebk-carousel .ebk-link{display:block;text-decoration:none;color:inherit;}
+          @media (min-width:576px){.ebk-carousel .ebk-wrap{max-width:540px}.ebk-carousel{--wrap-max:540px}}
+          @media (min-width:768px){.ebk-carousel .ebk-wrap{max-width:720px}.ebk-carousel{--wrap-max:720px}}
+          @media (min-width:992px){.ebk-carousel .ebk-wrap{max-width:960px}.ebk-carousel{--wrap-max:960px}}
+          @media (min-width:1280px){.ebk-carousel .ebk-wrap{max-width:1180px}.ebk-carousel{--wrap-max:1180px}}
+          @media (min-width:1480px){.ebk-carousel .ebk-wrap{max-width:1296px}.ebk-carousel{--wrap-max:1296px}}
+          @media (min-width:1580px){.ebk-carousel .ebk-wrap{max-width:1320px}.ebk-carousel{--wrap-max:1320px}}
+          .ebk-carousel .ebk-viewport{position:relative;overflow:visible;}
+          .ebk-carousel .ebk-stage{position:relative;}
+          .ebk-carousel .ebk-track{display:flex;gap:16px;overflow:hidden;cursor:grab;touch-action:pan-y;align-items:stretch;}
+          .ebk-carousel.is-dragging .ebk-track{cursor:grabbing;}
+          .ebk-carousel .ebk-item{flex:0 0 calc((100% - (16px * 4)) / 5);min-width:calc((100% - (16px * 4)) / 5);display:flex;}
+          @media (max-width:1399px){.ebk-carousel .ebk-item{flex-basis:calc((100% - (16px * 3))/4);min-width:calc((100% - (16px * 3))/4)}}
+          @media (max-width:1279px){.ebk-carousel .ebk-item{flex-basis:calc((100% - (16px * 2))/3);min-width:calc((100% - (16px * 2))/3)}}
+          @media (max-width:989px){.ebk-carousel .ebk-item{flex-basis:calc((100% - 16px)/2);min-width:calc((100% - 16px)/2)}}
+          .ebk-carousel .ebk-card{position:relative;background:#fff;border-radius:14px;overflow:hidden;width:100%;display:flex;flex-direction:column;border:1px solid #e9eef4;}
+          .ebk-carousel .ebk-card:hover{border-color:#d7dee7;}
+          .ebk-carousel .ebk-media{width:100%;aspect-ratio:4/3;background:#fff;}
+          .ebk-carousel .ebk-img{width:100%;height:100%;object-fit:contain;object-position:center;display:block;pointer-events:none;}
+          .ebk-carousel .ebk-card,*{user-select:none;-webkit-user-drag:none;}
+          .ebk-carousel .ebk-info{padding:12px 14px 14px;display:flex;flex-direction:column;height:100%;justify-content:space-between;gap:8px;}
+          .ebk-carousel .ebk-title{margin:0;font-size:13px;line-height:1.35;color:#2b2f36;}
+          .ebk-carousel .ebk-title b{font-weight:700;}
+          .ebk-carousel .ebk-title span{font-weight:400;}
+          .ebk-carousel .ebk-rating{display:inline-flex;align-items:center;gap:6px;}
+          .ebk-carousel .ebk-stars{display:inline-flex;gap:2px;}
+          .ebk-carousel .ebk-rating svg{width:12px;height:12px;}
+          .ebk-carousel .ebk-rcount{font-size:12px;color:#96a0aa;}
+          .ebk-carousel .ebk-priceRow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+          .ebk-carousel .ebk-price .ebk-price-dec{font-size:14px;}
+          .ebk-carousel .ebk-fav{position:absolute;top:10px;right:10px;z-index:2;width:22px;height:22px;background:transparent;border:none;padding:0;cursor:pointer;color:#ff8c26;}
+          .ebk-carousel .ebk-fav .lucide-heart-icon{width:16px;height:16px;}
+          .ebk-carousel .ebk-fav[aria-pressed="true"] .lucide-heart-icon path{fill:currentColor;}
+          .ebk-carousel .ebk-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;background:#fff;border:none;color:#212121;display:grid;place-items:center;cursor:pointer;z-index:3;box-shadow:0 4px 10px rgba(0,0,0,.1)}
+          .ebk-carousel .ebk-prev{left:calc(50% - (min(var(--wrap-max),100vw)/2) - 52px)}
+          .ebk-carousel .ebk-next{right:calc(50% - (min(var(--wrap-max),100vw)/2) - 52px)}
+          .ebk-carousel .ebk-nav svg{width:20px;height:20px;}
+          @media (max-width:575px){.ebk-carousel .ebk-nav{display:none}}
+       `;
+  
+        // Theme: current ebebek carousel styles
+        const cssWebsite = `
+          .ebk-carousel .ebk-box{background:#fff;border-radius:16px;border:none;}
+          .ebk-carousel .ebk-head{padding:12px 0;border:none;}
+          .ebk-carousel .ebk-head .ebk-title{font-size:24px;}
+          .ebk-carousel .ebk-priceRow--stack{display:flex;flex-direction:column;gap:0;}
+          .ebk-carousel .ebk-priceTop{display:flex;align-items:baseline;gap:12px;}
+          .ebk-carousel .ebk-original{font-size:12px;color:#a6afba;font-weight:600;text-decoration:line-through;}
+          .ebk-carousel .ebk-discount-pill{display:inline-flex;align-items:center;padding:0 6px;background:#00a365;color:#fff;border-radius:999px;font-weight:600;font-size:12px;}
+          .ebk-carousel .ebk-priceBottom .ebk-price{font-weight:600;font-size:18px;color:#00a365;line-height:14px;}
+          .ebk-carousel .ebk-price--normal{font-weight:600;font-size:18px;color:#2b2f36;}
+          .ebk-carousel .ebk-cta{position:absolute;right:12px;bottom:12px;width:44px;height:44px;border-radius:50%;border:none;background:#fff;color:#2f80ed;display:grid;place-items:center;box-shadow:0 4px 10px rgba(0,0,0,.1)}
+          .ebk-carousel .ebk-cta.ebk-cta-circle:hover{background:#0091D5;color:#fff;}
+        `;
+  
+        // Theme: the one on the hiring case PDF
+        const cssScreenshot = `
+          .ebk-carousel .ebk-viewport{position:relative;overflow:visible;padding:16px;}
+          .ebk-carousel .ebk-box{background:#fff;border-radius:18px;border:1px solid #eef2f6;overflow:hidden;}
+          .ebk-carousel .ebk-head{background:#fff4e8;border-bottom:1px solid #ffe9d3;padding:14px 18px;}
+          .ebk-carousel .ebk-head .ebk-title{margin:0;font-size:20px;font-weight:700;color:#ff8c26;}
+          .ebk-carousel .ebk-badges{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:2;}
+          .ebk-carousel .ebk-badge{background:#eafff5;color:#10a779;font-size:11px;font-weight:800;padding:4px 6px;border-radius:8px;border:1px solid #c9f3e4;}
+          .ebk-carousel .ebk-rating svg{width:12px;height:12px;}
+          .ebk-carousel .ebk-priceRow--stack{display:flex;flex-direction:column;gap:0;}
+          .ebk-carousel .ebk-priceTop{display:flex;align-items:center;gap:8px;}
+          .ebk-carousel .ebk-original{font-size:12px;color:#9aa0a6;text-decoration:line-through;font-weight:600;}
+          .ebk-carousel .ebk-discount-pill{display:inline-flex;align-items:center;padding:0 8px;background:#e8f8f0;color:#13a76b;border-radius:999px;font-weight:800;font-size:12px;}
+          .ebk-carousel .ebk-priceBottom .ebk-price{font-weight:600;font-size:24px;color:#13a76b;}
+          .ebk-carousel .ebk-price--normal{font-weight:600;font-size:24px;color:#656565;}
+          /* Full-width cream footer button like the first image (spacing + 50px radius) */
+          .ebk-carousel .ebk-cta{
+              display: block;
+              width: calc(100% - 24px);
+              margin: 10px 12px 14px;
+              padding: 12px 18px;
+              background: #fff4e8;
+              color: #ff8c26;
+              border: 1px solid #ffe9d3;
+              border-radius: 50px;
+              font-weight: 700;
+              font-size: 14px;
+              cursor: pointer;
+              box-shadow: none;
+              text-align: center;
+          }
+          .ebk-carousel .ebk-cta:hover{background:#ffedd9;}
+          .ebk-carousel .ebk-nav{display:grid !important;}
+        `;
+  
+        const css = cssCommon + (variant === "website" ? cssWebsite : cssScreenshot);
+        $("<style>").attr("data-ebk-carousel", "true").attr("data-variant", variant).text(css).appendTo(document.head);
+      }
 
     /*
      * BOOT
