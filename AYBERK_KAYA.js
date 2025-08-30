@@ -248,5 +248,51 @@
             <button class="ebk-nav ebk-next" type="button" aria-label="Sonraki">${arrowRightSVG()}</button>
         </section>`;
     }
+
+    /*
+     * CORE MECHANICS (step size, animate, snap, nav disable)
+     */
+    // Step = card width + gap (computed from first item)
+    function getStepSize($track) {
+      const $first = $track.find(".ebk-item").first();
+
+      if (!$first.length) return $track[0].clientWidth;
+
+      const rect = $first[0].getBoundingClientRect();
+      const gap = parseFloat(getComputedStyle($track[0]).gap || "16") || 16;
+
+      return rect.width + gap;
+    }
+
+    // Move exactly one item left/right
+    function goRelative($track, delta) {
+      const step = getStepSize($track);
+      const current = Math.round($track.scrollLeft() / step);
+      const targetIdx = Math.max(0, current + delta);
+      const target = targetIdx * step;
+      $track.stop(true).animate({ scrollLeft: target }, 220, "linear");
+    }
+
+    // Snap to nearest item after drag
+    function snapToNearest($track) {
+      const step = getStepSize($track);
+      const left = $track.scrollLeft();
+      const rem = left % step;
+
+      if (rem < ALIGN_EPSILON_PX || step - rem < ALIGN_EPSILON_PX) return;
+
+      const idx = Math.round(left / step);
+      const target = idx * step;
+      $track.stop(true).animate({ scrollLeft: target }, 240, "swing");
+    }
+
+    // Disable prev at start, next at end
+    function updateNavDisabled($root, $track) {
+      const max = $track[0].scrollWidth - $track[0].clientWidth - 1;
+      const atStart = $track.scrollLeft() <= 1;
+      const atEnd = $track.scrollLeft() >= max;
+      $root.find(".ebk-prev").prop("disabled", atStart);
+      $root.find(".ebk-next").prop("disabled", atEnd);
+    }
   });
 })();
