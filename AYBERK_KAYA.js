@@ -294,5 +294,107 @@
       $root.find(".ebk-prev").prop("disabled", atStart);
       $root.find(".ebk-next").prop("disabled", atEnd);
     }
+
+    /*
+     * EVENTS (delegated nav/fav/cta, drag vs click, resize/scroll)
+     */
+    function toggleFavorite($btn) {
+      const id = $btn.attr("data-id");
+
+      if (!id) return;
+
+      const set = new Set((readJSON(FAVORITES_KEY) || []).map(String));
+      const willFav = !set.has(id);
+      willFav ? set.add(id) : set.delete(id);
+      writeJSON(FAVORITES_KEY, Array.from(set));
+      $btn.attr("aria-pressed", String(willFav)).attr("aria-label", willFav ? "Favorilerden çıkar" : "Favorilere ekle");
+    }
+
+    function setupEvents($root) {
+      const $track = $root.find(".ebk-track");
+
+      // Prev/next (one step)
+      $root.on("click", ".ebk-prev", () => goRelative($track, -1));
+      $root.on("click", ".ebk-next", () => goRelative($track, 1));
+
+      // Favorite (persist id list)
+      $root.on("click", ".ebk-fav", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFavorite($(this));
+      });
+
+      // CTA (open in new tab)
+      $root.on("click", ".ebk-cta", function () {
+        const href = $(this).attr("data-href");
+
+        if (href) window.open(href, "_blank", "noopener");
+      });
+
+      // Drag vs click (mouse + touch), with one-click suppression after a drag
+      const drag = { active: false, moved: false, startX: 0, startScroll: 0 };
+      let suppressNextLinkClick = false;
+
+      // Cancel exactly one anchor click after a true drag
+      $track.on("click", ".ebk-link", function (e) {
+        if (suppressNextLinkClick) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+        suppressNextLinkClick = false;
+      });
+
+      function start(x) {
+        drag.active = true;
+        drag.moved = false;
+        drag.startX = x;
+        drag.startScroll = $track.scrollLeft();
+        $root.addClass("is-dragging");
+      }
+
+      function move(x) {
+        if (!drag.active) return;
+
+        const dx = x - drag.startX;
+
+        if (!drag.moved && Math.abs(dx) >= DRAG_THRESHOLD_PX) drag.moved = true;
+
+        if (drag.moved) $track.scrollLeft(drag.startScroll - dx);
+      }
+
+      function end() {
+        if (!drag.active) return;
+
+        $root.removeClass("is-dragging");
+
+        if (drag.moved) {
+          suppressNextLinkClick = true;
+          snapToNearest($track);
+        }
+
+        drag.active = false;
+        updateNavDisabled($root, $track);
+      }
+
+      // Mouse
+      $track.on("mousedown", function (e) {
+        if (e.button === 0) start(e.clientX);
+      });
+      $(document).on("mousemove", (e) => move(e.clientX));
+      $(document).on("mouseup", end);
+
+      // Touch
+      $track.on("touchstart", (e) => start(e.originalEvent.touches[0].clientX));
+      $track.on("touchmove", (e) => {
+        move(e.originalEvent.touches[0].clientX);
+        if (drag.moved) e.preventDefault(); // prevent scroll chaining while dragging
+      });
+      $track.on("touchend touchcancel", end);
+
+      // Keep nav state fresh
+      $track.on("scroll", () => updateNavDisabled($root, $track));
+      $(window).on("resize", () => updateNavDisabled($root, $track));
+      updateNavDisabled($root, $track);
+    }
   });
 })();
