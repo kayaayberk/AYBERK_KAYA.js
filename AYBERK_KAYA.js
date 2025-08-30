@@ -125,5 +125,41 @@
         pendingObserver.observe(document.documentElement, { childList: true, subtree: true });
       });
     }
+
+    /*
+     * DATA (cache → fetch)
+     */
+    async function loadProducts(currentToken) {
+      // Try local cache
+      const cached = readJSON(PRODUCTS_KEY);
+      if (Array.isArray(cached) && cached.length) return cached;
+
+      // Fetch fresh if no cache
+      try {
+        pendingFetchController = typeof AbortController !== "undefined" ? new AbortController() : null;
+
+        const res = await fetch(API_URL, { cache: "no-cache", signal: pendingFetchController?.signal });
+
+        if (currentToken !== navToken) return []; // stale navigation
+
+        if (!res.ok) throw new Error("HTTP " + res.status);
+
+        const data = await res.json();
+
+        if (currentToken !== navToken) return []; // stale navigation
+
+        writeJSON(PRODUCTS_KEY, data);
+
+        return data;
+
+      } catch (e) {
+        if (String(e?.name).toLowerCase() !== "aborterror") console.error("[ebk] product fetch failed:", e);
+
+        return [];
+
+      } finally {
+        pendingFetchController = null;
+      }
+    }
   });
 })();
