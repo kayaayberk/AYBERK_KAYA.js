@@ -178,5 +178,75 @@
       const fill = filled ? "#f9b300" : "none";
       return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.27l6.18 3.73-1.64-7.03L21 9.24l-7.19-.61L12 2 10.19 8.63 3 9.24l4.46 4.73L5.82 21z" fill="${fill}" stroke="#f9b300" stroke-width="1.5"/></svg>`;
     }
+
+    /*
+     * HTML BUILDERS
+     */
+    // Stacked or single price block
+    function priceBlockHTML(product) {
+      const d = discountInfo(product);
+      if (d) {
+        return `
+            <div class="ebk-priceRow ebk-priceRow--stack">
+                <div class="ebk-priceTop">
+                    ${buildPriceHTML(d.was, "ebk-original")}
+                    <span class="ebk-discount-pill">%${d.pct}</span>
+                </div>
+                <div class="ebk-priceBottom">
+                    ${buildPriceHTML(d.now, "ebk-price")}
+                </div>
+            </div>`;
+      }
+      return `<div class="ebk-priceRow">${buildPriceHTML(product.price, "ebk-price ebk-price--normal")}</div>`;
+    }
+
+    // Product card
+    function buildItemHTML(p, isFav) {
+      const title = `<p class="ebk-title">${p.brand ? `<b>${p.brand}</b> - ` : ""}<span>${p.name}</span></p>`;
+      const favAttr = isFav ? 'aria-pressed="true"' : 'aria-pressed="false"';
+      const ctaInner = STYLE_VARIANT === "website" ? plusSVG() : "Sepete Ekle";
+      const ctaClass = STYLE_VARIANT === "website" ? "ebk-cta ebk-cta-circle" : "ebk-cta";
+
+      return `
+        <div class="ebk-item">
+            <div class="ebk-card">
+                <div class="ebk-media">
+                    <button class="ebk-fav" type="button" data-id="${String(p.id)}" ${favAttr} aria-label="${isFav ? "Favorilerden çıkar" : "Favorilere ekle"}">${heartSVG()}</button>
+                    <a class="ebk-link" href="${p.url}" target="_blank" rel="noopener">
+                        <img class="ebk-img" src="${p.img}" alt="${p.name}" loading="lazy">
+                    </a>
+                </div>
+                <div class="ebk-info">
+                    ${title}
+                    ${priceBlockHTML(p)}
+                </div>
+                <button class="${ctaClass}" type="button" data-href="${p.url}">${ctaInner}</button>
+            </div>
+        </div>`;
+    }
+
+    // Carousel shell (prev/next + wrap + track)
+    function buildCarouselHTML(products, favSet) {
+      const items = products.map((p) => buildItemHTML(p, favSet.has(String(p.id)))).join("");
+      return `
+        <section class="${ROOT_CLASS}" role="region" aria-label="${TITLE_TEXT}">
+            <button class="ebk-nav ebk-prev" type="button" aria-label="Önceki">
+                <span style="display:inline-block;transform:rotate(180deg)">${arrowRightSVG()}</span>
+            </button>
+            <div class="ebk-wrap">
+                <div class="ebk-box">
+                    <div class="ebk-head"><h2 class="ebk-title">${TITLE_TEXT}</h2></div>
+                    <div class="ebk-viewport">
+                        <div class="ebk-stage">
+                            <div class="ebk-track">
+                                ${items}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="ebk-nav ebk-next" type="button" aria-label="Sonraki">${arrowRightSVG()}</button>
+        </section>`;
+    }
   });
 })();
