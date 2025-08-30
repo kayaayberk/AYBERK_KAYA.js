@@ -592,5 +592,12 @@
       const css = cssCommon + (variant === "website" ? cssWebsite : cssScreenshot);
       $("<style>").attr("data-ebk-carousel", "true").attr("data-variant", variant).text(css).appendTo(document.head);
     }
+
+    /*
+     * BOOT
+     */
+    installLocationWatcherOnce();
+    ensureMounted();
+    window.addEventListener("locationchange", ensureMounted);
   });
 })();
