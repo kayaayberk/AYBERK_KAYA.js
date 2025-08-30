@@ -396,5 +396,98 @@
       $(window).on("resize", () => updateNavDisabled($root, $track));
       updateNavDisabled($root, $track);
     }
+
+    /*
+     * MOUNT / UNMOUNT
+     */
+    // Fire custom "locationchange" on pushState/replaceState/popstate to prevent race conditions
+    function installLocationWatcherOnce() {
+      if (locationWatcherInstalled) return;
+
+      locationWatcherInstalled = true;
+
+      const fire = () => window.dispatchEvent(new Event("locationchange"));
+      const push = history.pushState;
+
+      history.pushState = function () {
+        push.apply(this, arguments);
+        fire();
+      };
+
+      const replace = history.replaceState;
+
+      history.replaceState = function () {
+        replace.apply(this, arguments);
+        fire();
+      };
+
+      window.addEventListener("popstate", fire);
+    }
+
+    // Mount only on homepage and when the anchor is present
+    async function ensureMounted() {
+      const myToken = bumpToken();
+
+      if (!isHomePage()) {
+        unmountCarousel();
+
+        if (!didLogWrongPage) {
+          console.log("wrong page");
+          didLogWrongPage = true;
+        }
+        return;
+      }
+
+      const anchor = await waitForAnchor(ANCHOR_SELECTOR, 6000);
+
+      if (myToken !== navToken) return; // route changed while waiting
+      
+      if (!anchor) {
+        unmountCarousel();
+
+        if (!didLogWrongPage) {
+          console.log("wrong page");
+          didLogWrongPage = true;
+        }
+        return;
+      }
+      didLogWrongPage = false;
+
+      // If a carousel already exists, move it under the current anchor
+      // Carousel was rendering on top of the anchor between page changes
+      const $existing = $("." + ROOT_CLASS);
+      if ($existing.length) {
+
+        if ($existing.prev()[0] !== anchor) $(anchor).after($existing);
+        return;
+      }
+
+      // First mount
+      injectStyles(STYLE_VARIANT);
+
+      const products = await loadProducts(myToken);
+
+      if (myToken !== navToken || !Array.isArray(products) || !products.length) return;
+
+      const favSet = new Set((readJSON(FAVORITES_KEY) || []).map(String));
+
+      const html = buildCarouselHTML(products, favSet);
+
+      if (!isHomePage()) return;
+
+      // Safety check
+      const stillThere = document.querySelector(ANCHOR_SELECTOR);
+
+      if (!stillThere) return;
+
+      $(stillThere).after(html);
+      const $root = $("." + ROOT_CLASS).first();
+      setupEvents($root);
+    }
+
+    // Remove the carousel root (if present)
+    function unmountCarousel() {
+      $("." + ROOT_CLASS).remove();
+    }
   });
 })();
