@@ -30,5 +30,100 @@
     let pendingFetchController = null;
     let didLogWrongPage = false;
     let locationWatcherInstalled = false;
+
+    /*
+     * UTILITIES (pure helpers)
+     */
+    // Invalidate any in-flight work (fetch/observer) on route change
+    function bumpToken() {
+      pendingFetchController = null;
+
+      if (pendingObserver) {
+        try {
+          pendingObserver.disconnect();
+        } catch {}
+      }
+
+      pendingObserver = null;
+      navToken += 1;
+      
+      return navToken;
+    }
+
+    // Consider homepage when path is exactly "/"
+    function isHomePage() {
+      const path = location.pathname.replace(/\/+$/, "/");
+      return path === "/";
+    }
+
+    // Safe localStorage helpers
+    function readJSON(key) {
+      try {
+        return JSON.parse(localStorage.getItem(key) || "null");
+      } catch {
+        return null;
+      }
+    }
+
+    function writeJSON(key, val) {
+      try {
+        localStorage.setItem(key, JSON.stringify(val));
+      } catch {}
+    }
+
+    // Currency output with small decimals: `12.345,67 TL`
+    function buildPriceHTML(value, wrapperClass) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) {
+        return `<span class="${wrapperClass}">${String(value)} TL</span>`;
+      }
+      const formatted = n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const [intPart, decPart] = formatted.split(",");
+      return `<span class="${wrapperClass}"><span class="ebk-price-int">${intPart}</span>,<span class="ebk-price-dec">${decPart} TL</span></span>`;
+    }
+
+    // Compute discount `{pct, now, was}` or `null`
+    function discountInfo(p) {
+      const now = Number(p.price);
+      const was = Number(p.original_price);
+
+      if (!Number.isFinite(now) || !Number.isFinite(was) || was <= 0 || now >= was) return null;
+      
+      const pct = Math.round(((was - now) / was) * 100);
+      return { pct, now, was };
+    }
+
+    // Wait for the hero slot (or time out). Returns the anchor element or null.
+    function waitForAnchor(selector, timeoutMs = 6000) {
+      const el = document.querySelector(selector);
+
+      if (el) return Promise.resolve(el);
+
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          try {
+            pendingObserver?.disconnect();
+          } catch {}
+
+          pendingObserver = null;
+          resolve(null);
+        }, timeoutMs);
+
+        pendingObserver = new MutationObserver(() => {
+          const node = document.querySelector(selector);
+
+          if (node) {
+            clearTimeout(timer);
+            try {
+              pendingObserver?.disconnect();
+            } catch {}
+
+            pendingObserver = null;
+            resolve(node);
+          }
+        });
+        pendingObserver.observe(document.documentElement, { childList: true, subtree: true });
+      });
+    }
   });
 })();
