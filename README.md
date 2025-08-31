@@ -13,6 +13,8 @@ It mounts after the homepage hero section, fetches products from an API, caches 
 - **`website`** – current carousel styles used on the site
 - **`screenshot`** – styles matching the hiring case PDF
 
+  Please change `STYLE_VARIANT` defined in the .js file to `screenshot` to see the carousel theme shown in the PDF.
+
 ---
 
 ## Features
